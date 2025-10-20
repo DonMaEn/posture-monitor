@@ -149,10 +149,7 @@ class PostureMonitor:
         print("⚠️  POSTURE ALERT: Bad posture detected!")
         print("="*60 + "\n")
                 
-        # Flash the console
-        for _ in range(3):
-            print("\a")  # Terminal bell
-            time.sleep(0.2)
+        print("\a")  # Terminal bell
 
     def stop(self):
         """Stop all monitoring threads"""
@@ -315,13 +312,10 @@ class PostureMonitor:
                 # Alert
                 if bad_time > self.time_threshold:
                     with self.lock:
-                        if not self.warning_triggered:
-                            self.warning_triggered = True
                             # Send warning in a separate thread to avoid blocking
-                            threading.Thread(target=self.send_warning, daemon=True).start()
-                else:
-                    with self.lock:
-                        self.warning_triggered = False
+                            self.send_warning()
+                            self.bad_frames = 0
+
                 
                 cv2.imshow('Side View - Posture', image)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
