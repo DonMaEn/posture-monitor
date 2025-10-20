@@ -5,6 +5,7 @@ import time
 import math as m
 import mediapipe as mp
 import argparse
+import win32api
 
 mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
@@ -38,19 +39,37 @@ def findAngle(x1, y1, x2, y2):
     degree = int(180/m.pi) * theta
     return degree
 
-def sendWarning(x):
+
+def findCentroid(x1, y1, x2, y2):
+    """
+    Calculate the centroid of two points
+
+    Args:
+        x1, y1: Coordinates of the first point.
+        x2, y2: Coordinates of the second point.
+
+    Returns:
+        Centroid coordiantes
+    """
+    x_c = (x1 + x2) / 2
+    y_c = (y1 + y2) / 2
+    return int(x_c), int(y_c)
+
+
+def sendWarning():
     """
     Placeholder function for sending a warning.
     """
-    pass
+    win32api.MessageBox(0, 'Bad Posture!', 'Posture Alert', 0x00001000) 
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description='Posture Monitor with MediaPipe')
     parser.add_argument('--video', type=str, default=0, help='Path to the input video file. If not provided, the webcam will be used.')
     parser.add_argument('--offset-threshold', type=int, default=100, help='Threshold value for shoulder alignment.')
-    parser.add_argument('--neck-angle-threshold', type=int, default=25, help='Threshold value for neck inclination angle.')
-    parser.add_argument('--torso-angle-threshold', type=int, default=10, help='Threshold value for torso inclination angle.')
-    parser.add_argument('--time-threshold', type=int, default=180, help='Time threshold for triggering a posture alert.')
+    parser.add_argument('--neck-angle-threshold', type=int, default=15, help='Threshold value for neck inclination angle.')
+    parser.add_argument('--torso-angle-threshold', type=int, default=5, help='Threshold value for torso inclination angle.')
+    parser.add_argument('--time-threshold', type=int, default=10, help='Time threshold for triggering a posture alert.')
     return parser.parse_args()
 
 def main(video_path=None, offset_threshold=100, neck_angle_threshold=25, torso_angle_threshold=10, time_threshold=180):
@@ -105,6 +124,8 @@ def main(video_path=None, offset_threshold=100, neck_angle_threshold=25, torso_a
 
         # Use lm and lmPose as representative of the following methods.
         lm = keypoints.pose_landmarks
+        if lm is None:
+            continue
         lmPose = mp_pose.PoseLandmark
 
         # Left shoulder.
@@ -115,13 +136,27 @@ def main(video_path=None, offset_threshold=100, neck_angle_threshold=25, torso_a
         r_shldr_x = int(lm.landmark[lmPose.RIGHT_SHOULDER].x * w)
         r_shldr_y = int(lm.landmark[lmPose.RIGHT_SHOULDER].y * h)
 
+        shldr_c_x, shldr_c_y = findCentroid(r_shldr_x, r_shldr_y, l_shldr_x, l_shldr_y)
+
+        # Right ear.
+        r_ear_x = int(lm.landmark[lmPose.RIGHT_EAR].x * w)
+        r_ear_y = int(lm.landmark[lmPose.RIGHT_EAR].y * h)
+
         # Left ear.
         l_ear_x = int(lm.landmark[lmPose.LEFT_EAR].x * w)
         l_ear_y = int(lm.landmark[lmPose.LEFT_EAR].y * h)
 
-        # Left hip.
+        ear_c_x, ear_c_y = findCentroid(r_ear_x, r_ear_y, l_ear_x, l_ear_y)
+
+        # Right hip.
+        r_hip_x = int(lm.landmark[lmPose.RIGHT_HIP].x * w)
+        r_hip_y = int(lm.landmark[lmPose.RIGHT_HIP].y * h)
+	
+	# Left hip
         l_hip_x = int(lm.landmark[lmPose.LEFT_HIP].x * w)
         l_hip_y = int(lm.landmark[lmPose.LEFT_HIP].y * h)
+
+        hip_c_x, hip_c_y = findCentroid(r_hip_x, r_hip_y, l_hip_x, l_hip_y)
 
         # Calculate distance between left shoulder and right shoulder points.
         offset = findDistance(l_shldr_x, l_shldr_y, r_shldr_x, r_shldr_y)
@@ -134,22 +169,33 @@ def main(video_path=None, offset_threshold=100, neck_angle_threshold=25, torso_a
             cv2.putText(image, str(int(offset)) + ' Shoulders not aligned', (w - 280, 30), font, 0.6, red, 2)
 
         # Calculate angles.
-        neck_inclination = findAngle(l_shldr_x, l_shldr_y, l_ear_x, l_ear_y)
-        torso_inclination = findAngle(l_hip_x, l_hip_y, l_shldr_x, l_shldr_y)
+        neck_inclination = findAngle(shldr_c_x, shldr_c_y, ear_c_x, ear_c_y)
+        torso_inclination = findAngle(hip_c_x, hip_c_y, shldr_c_x, shldr_c_y)
 
         # Draw landmarks.
+        cv2.circle(image, (r_shldr_x, r_shldr_y), 7, white, 1)
         cv2.circle(image, (l_shldr_x, l_shldr_y), 7, white, 2)
+        cv2.circle(image, (r_ear_x, r_ear_y), 7, white, 2)
         cv2.circle(image, (l_ear_x, l_ear_y), 7, white, 2)
+        cv2.circle(image, (r_hip_x, r_hip_y), 7, white, 2)
+        cv2.circle(image, (l_hip_x, l_hip_y), 7, white, 2)
 
+        cv2.circle(image, (ear_c_x, ear_c_y), 7, red, -1)
+        cv2.circle(image, (shldr_c_x, shldr_c_y), 7, green, -1)
+        cv2.circle(image, (hip_c_x, hip_c_y), 7, blue, -1)
+
+
+        '''
         # Let's take y - coordinate of P3 100px above x1,  for display elegance.
         # Although we are taking y = 0 while calculating angle between P1,P2,P3.
-        cv2.circle(image, (l_shldr_x, l_shldr_y - 100), 7, white, 2)
-        cv2.circle(image, (r_shldr_x, r_shldr_y), 7, pink, -1)
-        cv2.circle(image, (l_hip_x, l_hip_y), 7, yellow, -1)
+	# cv2.circle(image, (r_shldr_x, r_shldr_y - 100), 7, white, 2)
+        cv2.circle(image, (l_shldr_x, l_shldr_y), 7, pink, -1)
+        cv2.circle(image, (r_hip_x, r_hip_y), 7, white, 2)
 
         # Similarly, here we are taking y - coordinate 100px above x1. Note that
         # you can take any value for y, not necessarily 100 or 200 pixels.
-        cv2.circle(image, (l_hip_x, l_hip_y - 100), 7, yellow, -1)
+        cv2.circle(image, (l_hip_x, l_hip_y), 7, yellow, -1)
+        '''
 
         # Put text, Posture and angle inclination.
         # Text string for display.
@@ -159,19 +205,24 @@ def main(video_path=None, offset_threshold=100, neck_angle_threshold=25, torso_a
         # Determine whether good posture or bad posture.
         # The threshold angles have been set based on intuition.
         if neck_inclination < neck_angle_threshold and torso_inclination < torso_angle_threshold:
-            bad_frames = 0
+            if bad_frames > 0:
+                bad_frames -= 1
             good_frames += 1
 
             cv2.putText(image, angle_text_string_neck, (10, 30), font, 0.6, light_green, 2)
             cv2.putText(image, angle_text_string_torso, (10, 60), font, 0.6, light_green, 2)
-            cv2.putText(image, str(int(neck_inclination)), (l_shldr_x + 10, l_shldr_y), font, 0.9, light_green, 2)
-            cv2.putText(image, str(int(torso_inclination)), (l_hip_x + 10, l_hip_y), font, 0.9, light_green, 2)
+            cv2.putText(image, str(int(neck_inclination)), (shldr_c_x + 10, shldr_c_y), font, 0.9, light_green, 2)
+            cv2.putText(image, str(int(torso_inclination)), (hip_c_x + 10, hip_c_y), font, 0.9, light_green, 2)
 
             # Join landmarks.
-            cv2.line(image, (l_shldr_x, l_shldr_y), (l_ear_x, l_ear_y), green, 2)
-            cv2.line(image, (l_shldr_x, l_shldr_y), (l_shldr_x, l_shldr_y - 100), green, 2)
-            cv2.line(image, (l_hip_x, l_hip_y), (l_shldr_x, l_shldr_y), green, 2)
-            cv2.line(image, (l_hip_x, l_hip_y), (l_hip_x, l_hip_y - 100), green, 2)
+            cv2.line(image, (r_shldr_x, r_shldr_y), (shldr_c_x, shldr_c_y), green, 2)
+            cv2.line(image, (l_shldr_x, l_shldr_y), (shldr_c_x, shldr_c_y), green, 2)
+
+            cv2.line(image, (r_hip_x, r_hip_y), (hip_c_x, hip_c_y), green, 2)
+            cv2.line(image, (hip_c_x, hip_c_y), (l_hip_x, l_hip_y), green, 2)
+
+            cv2.line(image, (hip_c_x, hip_c_y), (shldr_c_x, shldr_c_y), green, 2)
+            cv2.line(image, (ear_c_x, ear_c_y), (shldr_c_x, shldr_c_y), green, 2)
 
         else:
             good_frames = 0
@@ -179,14 +230,18 @@ def main(video_path=None, offset_threshold=100, neck_angle_threshold=25, torso_a
 
             cv2.putText(image, angle_text_string_neck, (10, 30), font, 0.6, red, 2)
             cv2.putText(image, angle_text_string_torso, (10, 60), font, 0.6, red, 2)
-            cv2.putText(image, str(int(neck_inclination)), (l_shldr_x + 10, l_shldr_y), font, 0.9, red, 2)
-            cv2.putText(image, str(int(torso_inclination)), (l_hip_x + 10, l_hip_y), font, 0.9, red, 2)
+            cv2.putText(image, str(int(neck_inclination)), (shldr_c_x + 10, shldr_c_y), font, 0.9, red, 2)
+            cv2.putText(image, str(int(torso_inclination)), (hip_c_x + 10, hip_c_y), font, 0.9, red, 2)
 
             # Join landmarks.
-            cv2.line(image, (l_shldr_x, l_shldr_y), (l_ear_x, l_ear_y), red, 2)
-            cv2.line(image, (l_shldr_x, l_shldr_y), (l_shldr_x, l_shldr_y - 100), red, 2)
-            cv2.line(image, (l_hip_x, l_hip_y), (l_shldr_x, l_shldr_y), red, 2)
-            cv2.line(image, (l_hip_x, l_hip_y), (l_hip_x, l_hip_y - 100), red, 2)
+            cv2.line(image, (r_shldr_x, r_shldr_y), (shldr_c_x, shldr_c_y), red, 2)
+            cv2.line(image, (l_shldr_x, l_shldr_y), (shldr_c_x, shldr_c_y), red, 2)
+
+            cv2.line(image, (r_hip_x, r_hip_y), (hip_c_x, hip_c_y), red, 2)
+            cv2.line(image, (hip_c_x, hip_c_y), (l_hip_x, l_hip_y), red, 2)
+
+            cv2.line(image, (hip_c_x, hip_c_y), (shldr_c_x, shldr_c_y), red, 2)
+            cv2.line(image, (ear_c_x, ear_c_y), (shldr_c_x, shldr_c_y), red, 2)
 
         # Calculate the time of remaining in a particular posture.
         good_time = (1 / fps) * good_frames
@@ -202,6 +257,7 @@ def main(video_path=None, offset_threshold=100, neck_angle_threshold=25, torso_a
 
         # If you stay in bad posture for more than 3 minutes (180s) send an alert.
         if bad_time > time_threshold:
+            bad_frames = 0
             sendWarning()
 
         # Flip the image horizontally for a selfie-view display.
@@ -225,4 +281,8 @@ if __name__ == "__main__":
     print(f"Torso Angle Threshold: {args.torso_angle_threshold}")
     print(f"Time Threshold: {args.time_threshold}")
 
-    main(args.video)
+    main(video_path=args.video,
+         offset_threshold=args.offset_threshold,
+         neck_angle_threshold=args.neck_angle_threshold,
+         torso_angle_threshold=args.torso_angle_threshold,
+         time_threshold=args.time_threshold)
