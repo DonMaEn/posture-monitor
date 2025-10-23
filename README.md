@@ -1,11 +1,18 @@
-# Posture Monitor with MediaPipe 👤💻
+# Dual Camera Posture Monitor
 
-![](test.gif)
+![](front_good.png)
+![](side_good.png)
+![](front_bad.png)
+![](side_bad.png)
 
 ## Overview
-This project utilizes the MediaPipe library to create a real-time posture monitoring system using a webcam or video. The application assesses the alignment of the shoulders and the inclination of the neck and torso to determine whether the user is maintaining a good or bad posture. Additionally, it calculates the time spent in each posture and alerts the user if they remain in a bad posture for an extended period 🕒⚠️. 
+This project uses two webcams to monitor your posture in real time. It can also be used with one side facing webcam using the --single-camera flag. The code was adapted from https://github.com/mecantronic/posture-monitor
 
-This code was created with the help of the article [**Building a Poor Body Posture Detection & Alert System Using MediaPipe Body Tracking**](https://learnopencv.com/building-a-body-posture-analysis-system-using-mediapipe/).
+A terminal alert will be played if posture is poor for more than a given amount of time.
+
+Factors measured for posture are the tilt of the head, shoulders, neck, and torso. Also the front to back offset of the shoulders, and the vertical offset of the shoulders from the head are measured.
+
+The threshold values are all set to defaults based on me and my webcam setup. To figure out the proper values for you, run the program and observe the values displayed on screen when you have good posture. Set the threshold values near your observed values.
 
 
 ## Requirements
@@ -13,14 +20,15 @@ This code was created with the help of the article [**Building a Poor Body Postu
 * OpenCV (`pip install opencv-python`)
 * NumPy (`pip install numpy`)
 * Mediapipe (`pip install mediapipe`)
+* Explicit requirements defined in requirements.txt
 
 ## Usage
-1. Clone the repository to your local machine:
+1. Clone the repository to your local machine
 ``` bash
-git clone https://github.com/mecantronic/posture-monitor
+git clone https://github.com/DonMaEn/posture-monitor.git
 ```
 
-2. Navigate to the project directory:
+2. Navigate to the project directory
 ``` bash
 cd posture-monitor
 ```
@@ -45,31 +53,16 @@ pip install -r requirements.txt
 
 5. Run the posture monitoring script:
 ``` bash
-python app.py --video 'path/to/your/video.mp4' --offset-threshold 100 --neck-angle-threshold 25 --torso-angle-threshold 10 --time-threshold 180
+python app.py 
 ```
-* Optionally, you can omit --video to use the default webcam.
 
-6. Adjust your webcam to capture your posture, and the application will display real-time feedback on your posture status, inclination angles, and time spent in each posture. 📹👀
-
-## Features
-* Real-time posture monitoring using the webcam. 🔄
-* Visualization of shoulder alignment and neck/torso inclination angles. 📏🔄
-* Dynamic feedback on posture status (good or bad). 👍👎
-* Calculation of time spent in each posture. 🕒
-* Alert mechanism if bad posture is maintained for an extended period. ⚠️
-
-## Configuration
-You can adjust the following parameters in the posture_monitor.py script:
-
-* **Video** (`--video`): Path of video file.
-* **Offset Threshold** (`--offset-threshold`): Threshold value for shoulder alignment. 📏
-* **Angle Thresholds** (`--neck-angle-threshold`, `--torso-angle-threshold`): Threshold values for neck and torso inclination angles. 📐
-* **Time Threshold** (`--time-threshold`): Time threshold for triggering a posture alert. 🕒
+6. If you would like to change parameters, run the script with the help option for more information:
+``` bash
+python app.py --help
+```
 
 ## Acknowledgments
-This project utilizes the [MediaPipe](https://mediapipe.dev/) library for pose estimation. 👏
+This project utilizes the [MediaPipe](https://mediapipe.dev/) library for pose estimation.
 
 ## License
-This project is licensed under the [MIT License](https://opensource.org/license/mit/). 📜
-
-Feel free to contribute or report issues! 🚀
+This project is licensed under the [MIT License](https://opensource.org/license/mit/).
