@@ -103,27 +103,27 @@ def parse_arguments():
     parser.add_argument('--torso-angle-threshold', type=int, default=5, help='Threshold value for torso inclination angle.')
     parser.add_argument('--head-tilt-threshold', type=int, default=3, help='Threshold value for head tilt angle (degrees).')
     parser.add_argument('--shoulder-tilt-threshold', type=int, default=2, help='Threshold value for shoulder tilt angle (degrees).')
-    parser.add_argument('--shoulder-ear-offset', type=int, default=280, help='Threshold value for horizontal distance between shoulder and ear centroids (pixels).')
+    parser.add_argument('--shoulder-eye-offset', type=int, default=290, help='Threshold value for horizontal distance between shoulder and ear centroids (pixels).')
     parser.add_argument('--time-threshold', type=int, default=10, help='Time threshold for triggering a posture alert.')
     parser.add_argument('--single-camera', action='store_true', help='Use only side view camera (no head tilt detection)')
     return parser.parse_args()
 
 class PostureMonitor:
     def __init__(self, offset_threshold, neck_angle_threshold, torso_angle_threshold, 
-                 head_tilt_threshold, shoulder_tilt_threshold, shoulder_ear_offset, time_threshold):
+                 head_tilt_threshold, shoulder_tilt_threshold, shoulder_eye_offset, time_threshold):
         self.offset_threshold = offset_threshold
         self.neck_angle_threshold = neck_angle_threshold
         self.torso_angle_threshold = torso_angle_threshold
         self.head_tilt_threshold = head_tilt_threshold
         self.shoulder_tilt_threshold = shoulder_tilt_threshold
-        self.shoulder_ear_offset = shoulder_ear_offset
+        self.shoulder_eye_offset = shoulder_eye_offset
         self.time_threshold = time_threshold
         
         # Shared state
         self.good_frames = 0
         self.bad_frames = 0
-        self.head_tilt_bad = False
-        self.posture_bad = False
+        self.front_posture_bad = False
+        self.side_posture_bad = False
         self.lock = threading.Lock()
         self.running = True
         self.fps = 30
@@ -268,19 +268,18 @@ class PostureMonitor:
                 current_posture_good = (neck_inclination < self.neck_angle_threshold and 
                                        torso_inclination < self.torso_angle_threshold)
                 
-                with self.lock:
-                    self.posture_bad = not current_posture_good
+                self.side_posture_bad = not current_posture_good
                     
-                    if current_posture_good and not self.head_tilt_bad:
-                        if self.bad_frames > 0:
-                            self.bad_frames -= 1
-                        self.good_frames += 1
-                    else:
-                        self.good_frames = 0
-                        self.bad_frames += 1
-                    
-                    good_time = (1 / fps) * self.good_frames
-                    bad_time = (1 / fps) * self.bad_frames
+                if current_posture_good and not self.front_posture_bad:
+                    if self.bad_frames > 0:
+                        self.bad_frames -= 1
+                    self.good_frames += 1
+                else:
+                    self.good_frames = 0
+                    self.bad_frames += 1
+    
+                good_time = (1 / fps) * self.good_frames
+                bad_time = (1 / fps) * self.bad_frames
                 
                 color = self.light_green if current_posture_good else self.red
                 cv2.putText(image, angle_text_neck, (10, 30), self.font, 0.6, color, 2)
@@ -389,13 +388,7 @@ class PostureMonitor:
                 l_eye_y = int(lm.landmark[lmPose.LEFT_EYE].y * h)
                 r_eye_x = int(lm.landmark[lmPose.RIGHT_EYE].x * w)
                 r_eye_y = int(lm.landmark[lmPose.RIGHT_EYE].y * h)
-                
-                # Get ear landmarks
-                l_ear_x = int(lm.landmark[lmPose.LEFT_EAR].x * w)
-                l_ear_y = int(lm.landmark[lmPose.LEFT_EAR].y * h)
-                r_ear_x = int(lm.landmark[lmPose.RIGHT_EAR].x * w)
-                r_ear_y = int(lm.landmark[lmPose.RIGHT_EAR].y * h)
-                ear_c_x, ear_c_y = findCentroid(r_ear_x, r_ear_y, l_ear_x, l_ear_y)
+                eye_c_x, eye_c_y = findCentroid(r_eye_x, r_eye_y, l_eye_x, l_eye_y)
                 
                 # Get shoulder landmarks
                 l_shldr_x = int(lm.landmark[lmPose.LEFT_SHOULDER].x * w)
@@ -411,14 +404,14 @@ class PostureMonitor:
                 shoulder_tilt = findHorizontalTiltAngle(r_shldr_x, r_shldr_y, l_shldr_x, l_shldr_y)
                 
                 # Calculate horizontal distance between ear and shoulder centroids
-                ear_shoulder_offset = abs(ear_c_y - shldr_c_y)
+                eye_shoulder_offset = abs(eye_c_y - shldr_c_y)
                 
                 # Draw eye markers
                 cv2.circle(image, (l_eye_x, l_eye_y), 5, self.white, -1)
                 cv2.circle(image, (r_eye_x, r_eye_y), 5, self.white, -1)
                 
                 # Draw ear centroid
-                cv2.circle(image, (ear_c_x, ear_c_y), 7, self.blue, -1)
+                cv2.circle(image, (eye_c_x, eye_c_y), 7, self.blue, -1)
                 
                 # Draw shoulder markers and centroid
                 cv2.circle(image, (l_shldr_x, l_shldr_y), 7, self.white, 2)
@@ -428,39 +421,32 @@ class PostureMonitor:
                 # Determine if alignment is good
                 head_aligned = head_tilt < self.head_tilt_threshold
                 shoulders_aligned = shoulder_tilt < self.shoulder_tilt_threshold
-                ear_shoulder_aligned = ear_shoulder_offset > self.shoulder_ear_offset
-                all_aligned = head_aligned and shoulders_aligned and ear_shoulder_aligned
+                eye_shoulder_aligned = eye_shoulder_offset > self.shoulder_eye_offset
+                all_aligned = head_aligned and shoulders_aligned and eye_shoulder_aligned
+
+		# Don't need to update bad frames, those will be updated in the other thread when
+		# it checks self.front_posture_bad
+                self.front_posture_bad = not all_aligned
                 
                 # Draw lines
                 eye_color = self.green if head_aligned else self.red
                 shoulder_color = self.green if shoulders_aligned else self.red
-                offset_color = self.green if ear_shoulder_aligned else self.red
+                offset_color = self.green if eye_shoulder_aligned else self.red
                 
                 cv2.line(image, (l_eye_x, l_eye_y), (r_eye_x, r_eye_y), eye_color, 2)
                 cv2.line(image, (l_shldr_x, l_shldr_y), (r_shldr_x, r_shldr_y), shoulder_color, 3)
                 
                 # Draw vertical line showing ear-shoulder offset
-                cv2.line(image, (ear_c_x, ear_c_y), (shldr_c_x, shldr_c_y), offset_color, 2)
-                
-                # Update shared state
-                with self.lock:
-                    
-                    if all_aligned and not self.posture_bad:
-                        if self.bad_frames > 0:
-                            self.bad_frames -= 1
-                        self.good_frames += 1
-                    else:
-                        self.good_frames = 0
-                        self.bad_frames += 1
+                cv2.line(image, (eye_c_x, eye_c_y), (shldr_c_x, shldr_c_y), offset_color, 2)
                 
                 # Display info
                 head_text = f'Head Tilt: {head_tilt:.1f}°'
                 shoulder_text = f'Shoulder Tilt: {shoulder_tilt:.1f}°'
-                offset_text = f'Ear-Shoulder Offset: {ear_shoulder_offset}px'
+                offset_text = f'Ear-Shoulder Offset: {eye_shoulder_offset}px'
                 
                 head_color = self.light_green if head_aligned else self.red
                 shoulder_color_text = self.light_green if shoulders_aligned else self.red
-                offset_color_text = self.light_green if ear_shoulder_aligned else self.red
+                offset_color_text = self.light_green if eye_shoulder_aligned else self.red
                 
                 cv2.putText(image, head_text, (10, 30), self.font, 0.6, head_color, 2)
                 cv2.putText(image, shoulder_text, (10, 60), self.font, 0.6, shoulder_color_text, 2)
@@ -477,7 +463,7 @@ class PostureMonitor:
                     if not shoulders_aligned:
                         cv2.putText(image, 'Shoulders Uneven!', (10, y_pos), self.font, 0.7, self.red, 2)
                         y_pos += 30
-                    if not ear_shoulder_aligned:
+                    if not eye_shoulder_aligned:
                         cv2.putText(image, 'Shoulders hunched!', (10, y_pos), self.font, 0.7, self.red, 2)
                 
                 cv2.imshow('Front View - Head & Shoulders', image)
@@ -490,7 +476,7 @@ class PostureMonitor:
 
 def main(video_side=0, video_front=1, offset_threshold=100, neck_angle_threshold=15, 
          torso_angle_threshold=5, head_tilt_threshold=4, shoulder_tilt_threshold=4,
-         shoulder_ear_offset=50, time_threshold=10, single_camera=False):
+         shoulder_eye_offset=50, time_threshold=10, single_camera=False):
     
     print("\n" + "="*60)
     print("DUAL CAMERA POSTURE MONITOR")
@@ -519,7 +505,7 @@ def main(video_side=0, video_front=1, offset_threshold=100, neck_angle_threshold
         use_dual_camera = False
     
     monitor = PostureMonitor(offset_threshold, neck_angle_threshold, torso_angle_threshold,
-                            head_tilt_threshold, shoulder_tilt_threshold, shoulder_ear_offset,
+                            head_tilt_threshold, shoulder_tilt_threshold, shoulder_eye_offset,
                             time_threshold)
     
     # Set up signal handler for Ctrl+C
@@ -568,7 +554,7 @@ if __name__ == "__main__":
     print(f"  Torso Angle Threshold: {args.torso_angle_threshold}")
     print(f"  Head Tilt Threshold: {args.head_tilt_threshold}")
     print(f"  Shoulder Tilt Threshold: {args.shoulder_tilt_threshold}")
-    print(f"  Shoulder-Ear Offset Threshold: {args.shoulder_ear_offset}")
+    print(f"  Shoulder-Eye Offset Threshold: {args.shoulder_eye_offset}")
     print(f"  Time Threshold: {args.time_threshold}s")
     
     main(video_side=args.video_side,
@@ -578,6 +564,6 @@ if __name__ == "__main__":
          torso_angle_threshold=args.torso_angle_threshold,
          head_tilt_threshold=args.head_tilt_threshold,
          shoulder_tilt_threshold=args.shoulder_tilt_threshold,
-         shoulder_ear_offset=args.shoulder_ear_offset,
+         shoulder_eye_offset=args.shoulder_eye_offset,
          time_threshold=args.time_threshold,
          single_camera=args.single_camera)

@@ -1,7 +1,10 @@
 # Dual Camera Posture Monitor
 
+## Good posture examples:
 ![](front_good.png)
 ![](side_good.png)
+
+## Bad posture examples:
 ![](front_bad.png)
 ![](side_bad.png)
 
@@ -56,7 +59,9 @@ pip install -r requirements.txt
 python app.py 
 ```
 
-6. If you would like to change parameters, run the script with the help option for more information:
+6. NOTE: you have to press q while in one of the live webcam windows to close the program.
+
+7. If you would like to change parameters, run the script with the help option for more information:
 ``` bash
 python app.py --help
 ```
